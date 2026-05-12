@@ -25,7 +25,7 @@ fi
 
 rm -rf node_modules
 npm ci --no-audit --no-fund
-node scripts/verify-sharp.mjs
+node scripts/verify-deps.mjs
 echo "Production dependencies installed successfully."
 if [[ "${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-}" == "1" ]]; then
   echo "Playwright browsers were skipped. Run: npx playwright install chromium (needs RAM/disk) before using screenshot APIs." >&2
