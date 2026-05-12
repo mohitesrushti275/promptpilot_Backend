@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "verify:deps": "node scripts/verify-sharp.mjs",
+    "install:production": "bash scripts/install-production.sh",
+    "prestart": "node scripts/verify-sharp.mjs",
     "start": "node server.js"
   },
   "dependencies": {
