@@ -1054,9 +1054,14 @@ app.get('/api/figma-export/latest/item', (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(port, () => console.log(`🚀 Backend running at http://localhost:${port}`));
-}
+app.listen(port, () => {
+  const isProd = (process.env.NODE_ENV || 'development') === 'production';
+  console.log(
+    isProd
+      ? `🚀 Backend listening on port ${port}`
+      : `🚀 Backend running at http://localhost:${port}`
+  );
+});
 
 export default app;
 
