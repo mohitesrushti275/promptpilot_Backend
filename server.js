@@ -44,6 +44,7 @@ function readData() {
     }
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (!parsed.figmaExports) parsed.figmaExports = [];
+    if (!Array.isArray(parsed.components)) parsed.components = [];
     return parsed;
   } catch (err) {
     console.error('[DB] Error reading data:', err);
@@ -91,14 +92,32 @@ function getAnthropicInstance() {
 const openai = openAIKey ? new OpenAI({ apiKey: openAIKey }) : null;
 
 // ── Middleware ───────────────────────────────────────────────────────────────
-// ── Middleware ───────────────────────────────────────────────────────────────
-const allowedOrigins = [
+const defaultAllowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
   'https://ai-project-nu-three.vercel.app',
   'https://app.promptpilot.sharehq.org',
 ];
+
+const extraCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const allowedOrigins = [...defaultAllowedOrigins, ...extraCorsOrigins];
+
+/** Same product family as apiserver.promptpilot.sharehq.org — any HTTPS origin on this host. */
+function isPromptPilotSharehqOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname;
+    return h === 'promptpilot.sharehq.org' || h.endsWith('.promptpilot.sharehq.org');
+  } catch {
+    return false;
+  }
+}
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -115,7 +134,11 @@ app.use(cors({
         // If origin is malformed, fall through to allowlist check.
       }
     }
+    if (isPromptPilotSharehqOrigin(origin)) {
+      return callback(null, true);
+    }
     if (allowedOrigins.indexOf(origin) === -1) {
+      console.warn('[CORS] Blocked Origin:', origin, '| Set CORS_ALLOWED_ORIGINS to allow it.');
       const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
     }
