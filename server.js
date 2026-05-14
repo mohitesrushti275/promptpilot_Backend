@@ -3,7 +3,6 @@ dotenv.config({ override: true });
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import sharp from 'sharp';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import fs from 'fs';
@@ -382,7 +381,13 @@ app.post('/api/analyze', (req, res, next) => {
 
     // ── Layer 2: Image processing (Sharp) ────────────────────────────────────
     console.log('[Layer 2]  Processing image with Sharp...');
-    const processedBuffer = await sharp(req.file.buffer)
+    let sharpLib;
+    try {
+      sharpLib = (await import('sharp')).default;
+    } catch {
+      return res.status(503).json({ error: 'Image processing unavailable: Sharp module failed to load on this server.' });
+    }
+    const processedBuffer = await sharpLib(req.file.buffer)
       .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 90 })
       .toBuffer();

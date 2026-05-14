@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { getAnthropicModel, anthropicMessageText } from './anthropicResponse.js';
 
 const UI_ANALYSIS_SYSTEM_PROMPT = `You are an elite Digital Architect and Visual Intelligence Engine.
@@ -32,13 +31,20 @@ RULES:
 export async function optimizeScreenshot(base64Image) {
   console.log('[ImageToPromptService] Optimizing screenshot for Anthropic...');
   const buffer = Buffer.from(base64Image, 'base64');
-  
-  // Resize to acceptable dimensions for Claude to process quickly
-  const optimizedBuffer = await sharp(buffer)
+
+  let sharpLib;
+  try {
+    sharpLib = (await import('sharp')).default;
+  } catch {
+    console.warn('[ImageToPromptService] Sharp not available, skipping optimization');
+    return base64Image;
+  }
+
+  const optimizedBuffer = await sharpLib(buffer)
     .resize(1920, 4000, { fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 80 })
     .toBuffer();
-    
+
   return optimizedBuffer.toString('base64');
 }
 
