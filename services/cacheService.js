@@ -11,7 +11,8 @@ const PROMPT_CACHE_FILE = path.join(CACHE_DIR, 'prompt_cache.json');
 const CONTENT_CACHE_FILE = path.join(CACHE_DIR, 'content_cache.json');
 const ANALYSIS_CACHE_FILE = path.join(CACHE_DIR, 'analysis_cache.json');
 
-// Ensure cache directory exists
+const MAX_ENTRIES = 50;
+
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -35,35 +36,64 @@ function saveCache(file, data) {
   }
 }
 
-let promptCache = loadCache(PROMPT_CACHE_FILE);
-let contentCache = loadCache(CONTENT_CACHE_FILE);
-let analysisCache = loadCache(ANALYSIS_CACHE_FILE);
+function evictIfNeeded(cache) {
+  const keys = Object.keys(cache);
+  if (keys.length <= MAX_ENTRIES) return;
+  const toRemove = keys.slice(0, keys.length - MAX_ENTRIES);
+  for (const k of toRemove) delete cache[k];
+}
+
+// Lazily loaded — not populated at module import time
+let promptCache = null;
+let contentCache = null;
+let analysisCache = null;
+
+function getPromptCache() {
+  if (!promptCache) promptCache = loadCache(PROMPT_CACHE_FILE);
+  return promptCache;
+}
+
+function getContentCache() {
+  if (!contentCache) contentCache = loadCache(CONTENT_CACHE_FILE);
+  return contentCache;
+}
+
+function getAnalysisCache() {
+  if (!analysisCache) analysisCache = loadCache(ANALYSIS_CACHE_FILE);
+  return analysisCache;
+}
 
 export function getPromptFromCache(hash) {
-  return promptCache[hash];
+  return getPromptCache()[hash];
 }
 
 export function setPromptToCache(hash, prompt) {
-  promptCache[hash] = prompt;
-  saveCache(PROMPT_CACHE_FILE, promptCache);
+  const cache = getPromptCache();
+  cache[hash] = prompt;
+  evictIfNeeded(cache);
+  saveCache(PROMPT_CACHE_FILE, cache);
 }
 
 export function getContentSummaryFromCache(hash) {
-  return contentCache[hash];
+  return getContentCache()[hash];
 }
 
 export function setContentSummaryToCache(hash, summary) {
-  contentCache[hash] = summary;
-  saveCache(CONTENT_CACHE_FILE, contentCache);
+  const cache = getContentCache();
+  cache[hash] = summary;
+  evictIfNeeded(cache);
+  saveCache(CONTENT_CACHE_FILE, cache);
 }
 
 export function getAnalysisFromCache(hash) {
-  return analysisCache[hash];
+  return getAnalysisCache()[hash];
 }
 
 export function setAnalysisToCache(hash, analysis) {
-  analysisCache[hash] = analysis;
-  saveCache(ANALYSIS_CACHE_FILE, analysisCache);
+  const cache = getAnalysisCache();
+  cache[hash] = analysis;
+  evictIfNeeded(cache);
+  saveCache(ANALYSIS_CACHE_FILE, cache);
 }
 
 export function generateHash(data) {

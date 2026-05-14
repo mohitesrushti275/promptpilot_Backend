@@ -53,7 +53,7 @@ function readData() {
 
 function writeData(data) {
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data));
   } catch (err) {
     console.error('[DB] Error writing data:', err);
   }
@@ -126,8 +126,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 
 // ── AI Helper ──────────────────────────────────────────────────────────────
@@ -779,7 +779,6 @@ app.post('/api/design-manifest/generate-from-reference', (req, res, next) => {
             ref.human_readable_prompt = cachedAnalysis.human_readable_prompt;
 
             allAnalyses.push({ ...cachedAnalysis, ...ref });
-            if (!optimizedBase64) optimizedBase64 = cachedAnalysis.screenshotBase64;
             continue;
           }
 
@@ -801,8 +800,8 @@ Please extract design intelligence ONLY relevant to this description.`.trim();
 
             const analysis = await analyzeUI_Image(client, oBase64, userContext, platformType);
 
-            // Cache the result
-            setAnalysisToCache(analysisHash, { ...analysis, screenshotBase64: oBase64 });
+            // Cache the analysis result only — screenshots are not persisted in cache
+            setAnalysisToCache(analysisHash, analysis);
 
             // Attach analysis results to reference
             ref.style = analysis.style;
@@ -869,11 +868,11 @@ Please extract design intelligence ONLY relevant to this section and description
       if (cachedAnalysis) {
         console.log(`[Optimization] Using cached analysis for ${referenceUrl}`);
         aiAnalysis = cachedAnalysis;
-        optimizedBase64 = cachedAnalysis.screenshotBase64;
       } else {
         try {
           screenshotBase64 = await captureScreenshot(referenceUrl);
           optimizedBase64 = await optimizeScreenshot(screenshotBase64);
+          screenshotBase64 = null; // release raw screenshot — optimized copy is sufficient
 
           const userContext = `
 Business Name: ${businessName || 'A Modern Business'}
@@ -886,7 +885,8 @@ Theme Mode: ${themeMode || 'Dark'}
 `.trim();
 
           aiAnalysis = await analyzeUI_Image(client, optimizedBase64, userContext, platformType);
-          setAnalysisToCache(analysisHash, { ...aiAnalysis, screenshotBase64: optimizedBase64 });
+          // Cache analysis only — screenshots are not persisted in cache
+          setAnalysisToCache(analysisHash, aiAnalysis);
         } catch (err) {
           return res.status(502).json({ success: false, error: 'Reference analysis failed: ' + err.message });
         }
