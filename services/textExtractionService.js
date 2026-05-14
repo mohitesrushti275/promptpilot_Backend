@@ -2,12 +2,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
-const WordExtractor = require('word-extractor');
 
-/**
- * Extracts text from various file formats.
- * Supports: .pdf, .docx, .doc, .txt, .md, .json
- */
 export async function extractTextFromBuffer(buffer, originalname) {
   const extension = originalname.split('.').pop().toLowerCase();
 
@@ -21,10 +16,17 @@ export async function extractTextFromBuffer(buffer, originalname) {
         const docxResult = await mammoth.extractRawText({ buffer });
         return docxResult.value;
 
-      case 'doc':
+      case 'doc': {
+        let WordExtractor;
+        try {
+          WordExtractor = require('word-extractor');
+        } catch {
+          throw new Error('.doc extraction unavailable: word-extractor is not installed on this server.');
+        }
         const extractor = new WordExtractor();
         const doc = await extractor.extract(buffer);
         return doc.getBody();
+      }
 
       case 'txt':
       case 'md':
@@ -33,7 +35,6 @@ export async function extractTextFromBuffer(buffer, originalname) {
         return buffer.toString('utf8');
 
       default:
-        // Try as text as a fallback if it's a known text-like extension or no extension
         return buffer.toString('utf8');
     }
   } catch (error) {

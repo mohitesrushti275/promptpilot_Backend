@@ -6,7 +6,10 @@
     "start": "node --max-old-space-size=512 server.js"
   },
   "optionalDependencies": {
-    "@img/sharp-linux-x64": "^0.34.5"
+    "@img/sharp-linux-x64": "^0.34.5",
+    "playwright": "^1.59.1",
+    "sharp": "^0.34.5",
+    "word-extractor": "^1.0.4"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.86.1",
@@ -16,9 +19,6 @@
     "mammoth": "^1.12.0",
     "multer": "^2.1.1",
     "openai": "^6.33.0",
-    "pdf-parse": "^2.4.5",
-    "playwright": "^1.59.1",
-    "sharp": "^0.34.5",
-    "word-extractor": "^1.0.4"
+    "pdf-parse": "^2.4.5"
   }
 }
