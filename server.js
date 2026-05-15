@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config({ override: true });
+dotenv.config({ path: new URL('.env', import.meta.url).pathname, override: true });
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
