@@ -32,20 +32,20 @@ RULES:
 export async function optimizeScreenshot(base64Image) {
   console.log('[ImageToPromptService] Optimizing screenshot for Anthropic...');
   const buffer = Buffer.from(base64Image, 'base64');
-  
+
   // Resize to acceptable dimensions for Claude to process quickly
   const optimizedBuffer = await sharp(buffer)
     .resize(1920, 4000, { fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 80 })
     .toBuffer();
-    
+
   return optimizedBuffer.toString('base64');
 }
 
 export async function analyzeUI_Image(client, optimizedBase64Image, userContext = '', platformType = 'anthropic') {
   console.log(`[ImageToPromptService] Requesting UI structural analysis from ${platformType}...`);
-  
-  const userMessageContent = userContext 
+
+  const userMessageContent = userContext
     ? `Analyze this complete website screenshot and output the structured JSON intel required to rebuild its frontend design system.
 
 CRITICAL OVERRIDES:
@@ -111,7 +111,7 @@ INSTRUCTIONS:
   }
 
   rawContent = rawContent.trim();
-  
+
   // JSON Extraction Strategies
   let jsonStr = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
   const lastBrace = jsonStr.lastIndexOf('}');

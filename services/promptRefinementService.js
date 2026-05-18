@@ -10,7 +10,7 @@ import { getAnthropicModel, anthropicMessageText } from './anthropicResponse.js'
  */
 function validateContentFidelity(inputContent, generatedPrompt) {
   if (!inputContent || inputContent.trim().length < 50) return true;
-  
+
   const cleanInput = inputContent.trim().toLowerCase().replace(/\s+/g, ' ');
   const cleanOutput = generatedPrompt.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -104,6 +104,9 @@ For EVERY section added by the user:
     multipleReferencesText = '\nREFERENCE WEBSITES & NOTES:\n';
     multipleReferences.forEach((ref, index) => {
       multipleReferencesText += `--- Reference ${index + 1}: ${ref.url} ---\nNote: "${ref.description || 'Follow this style'}"\nDetected Style: ${ref.style || 'N/A'}\nImage Analysis: ${ref.human_readable_prompt || 'N/A'}\n`;
+      if (ref.extractedText) {
+        multipleReferencesText += `Extracted Website DOM & Text Data:\n${ref.extractedText}\n`;
+      }
     });
   }
 
@@ -137,7 +140,7 @@ INSTRUCTIONS:
 4. Follow the MANDATORY OUTPUT STRUCTURE exactly.`;
 
   let finalPrompt = '';
-  
+
   if (platformType === 'openai') {
     const completion = await client.chat.completions.create({
       model: "gpt-4o",

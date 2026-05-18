@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: new URL('.env', import.meta.url).pathname, override: true });
+import { fileURLToPath } from 'url';
+dotenv.config({ path: fileURLToPath(new URL('.env', import.meta.url)), override: true });
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -8,9 +9,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-import { captureScreenshot } from './services/screenshotService.js';
+import { captureScreenshot, extractWebsiteMetadataAndScreenshot } from './services/screenshotService.js';
 import { optimizeScreenshot, analyzeUI_Image } from './services/imageToPromptService.js';
 import { determineSections } from './services/sectionDetectionService.js';
 import { saveManifest, getManifest } from './services/designManifestService.js';
@@ -129,6 +129,10 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+// Serve uploaded images
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+
 
 // ── AI Helper ──────────────────────────────────────────────────────────────
 function getAIClient(platformKey) {
@@ -231,20 +235,36 @@ app.get('/api/subsections/:id', (req, res) => {
   res.status(404).json({ error: 'Subsection not found' });
 });
 
-app.post('/api/components/:id/subsections', (req, res) => {
+/** Helper to save uploaded file buffer to disk */
+const saveUploadedFile = (file) => {
+  if (!file) return '';
+  const ext = path.extname(file.originalname) || '.webp';
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}${ext}`;
+  const filePath = path.join(__dirname, 'uploads', fileName);
+  fs.writeFileSync(filePath, file.buffer);
+  return `/uploads/${fileName}`;
+};
+
+app.post('/api/components/:id/subsections', upload.single('image'), (req, res) => {
   const { id } = req.params;
-  const { title, prompt, code, image } = req.body;
+  const { title, prompt, code, figmaUrl } = req.body;
+  let image = req.body.image || ''; // Could be an existing URL string
+
+  if (req.file) {
+    image = saveUploadedFile(req.file);
+  }
+
   const data = readData();
   const index = data.components.findIndex(c => c.id === id);
   if (index === -1) return res.status(404).json({ error: 'Component not found' });
 
   const newSection = {
     id: Date.now().toString(),
-    title,
+    title: title || '',
     prompt: prompt || '',
     code: code || '',
     image: image || '',
-    figmaUrl: req.body.figmaUrl || '',
+    figmaUrl: figmaUrl || '',
     category: data.components[index].name
   };
   data.components[index].subsections.push(newSection);
@@ -253,9 +273,15 @@ app.post('/api/components/:id/subsections', (req, res) => {
   res.json(newSection);
 });
 
-app.put('/api/subsections/:id', (req, res) => {
+app.put('/api/subsections/:id', upload.single('image'), (req, res) => {
   const { id } = req.params;
-  const { title, prompt, code, image } = req.body;
+  const { title, prompt, code, figmaUrl } = req.body;
+  let image = req.body.image; // Could be a URL or undefined
+
+  if (req.file) {
+    image = saveUploadedFile(req.file);
+  }
+
   const data = readData();
   let updated = null;
 
@@ -268,7 +294,7 @@ app.put('/api/subsections/:id', (req, res) => {
         prompt: prompt !== undefined ? prompt : comp.subsections[sIndex].prompt,
         code: code !== undefined ? code : comp.subsections[sIndex].code,
         image: image !== undefined ? image : comp.subsections[sIndex].image,
-        figmaUrl: req.body.figmaUrl !== undefined ? req.body.figmaUrl : comp.subsections[sIndex].figmaUrl
+        figmaUrl: figmaUrl !== undefined ? figmaUrl : comp.subsections[sIndex].figmaUrl
       };
       updated = comp.subsections[sIndex];
       break;
@@ -739,6 +765,16 @@ app.post('/api/design-manifest/generate-from-reference', (req, res, next) => {
           console.error(`[Extraction ✗] Failed to extract from ${contentFile.originalname}:`, err.message);
         }
       }
+
+      // Map section images to their respective sections
+      clientResourcesSections.forEach((sec, idx) => {
+        const fieldName = `sectionImage_${idx}`;
+        const imageFile = req.files.find(f => f.fieldname === fieldName);
+        if (imageFile) {
+          sec.imagePath = saveUploadedFile(imageFile);
+          sec.imageBuffer = imageFile.buffer; // Keep buffer for AI analysis
+        }
+      });
     }
 
     // Optimization: Summarize content once if it's large
@@ -777,15 +813,38 @@ app.post('/api/design-manifest/generate-from-reference', (req, res, next) => {
             ref.style = cachedAnalysis.style;
             ref.layout = cachedAnalysis.layout;
             ref.human_readable_prompt = cachedAnalysis.human_readable_prompt;
+            ref.extractedText = cachedAnalysis.extractedText;
 
-            allAnalyses.push({ ...cachedAnalysis, ...ref });
+            allAnalyses.push({ 
+              ...cachedAnalysis, 
+              ...ref, 
+              screenshotUrl: cachedAnalysis.screenshotBase64 ? `data:image/jpeg;base64,${cachedAnalysis.screenshotBase64}` : null 
+            });
             if (!optimizedBase64) optimizedBase64 = cachedAnalysis.screenshotBase64;
             continue;
           }
 
+          console.log(`[URL Processor] Starting combined extraction & capture for: ${ref.url}`);
           try {
-            const sBase64 = await captureScreenshot(ref.url);
-            const oBase64 = await optimizeScreenshot(sBase64);
+            const result = await extractWebsiteMetadataAndScreenshot(ref.url);
+            
+            // Structured backend logs showing processing status
+            if (result.contentSuccess) {
+              console.log(`[URL Processor ✓] Content extraction SUCCESS for ${ref.url}`);
+            } else {
+              console.warn(`[URL Processor ✗] Content extraction FAILED for ${ref.url}`);
+            }
+
+            if (result.screenshotSuccess) {
+              console.log(`[URL Processor ✓] Screenshot capture SUCCESS for ${ref.url}`);
+            } else {
+              console.error(`[URL Processor ✗] Screenshot capture FAILED for ${ref.url}`);
+            }
+
+            let oBase64 = null;
+            if (result.screenshotBase64) {
+              oBase64 = await optimizeScreenshot(result.screenshotBase64);
+            }
 
             const userContext = `
 Business Name: ${businessName || 'A Modern Business'}
@@ -799,19 +858,45 @@ ATTENTION CLAUDE: This specific reference website should be used primarily for:
 Description provided by user: "${ref.description}"
 Please extract design intelligence ONLY relevant to this description.`.trim();
 
-            const analysis = await analyzeUI_Image(client, oBase64, userContext, platformType);
+            let analysis = {
+              style: 'Modern Minimalist',
+              layout: websiteLayout || 'Landing Page',
+              colors: [primaryColor, secondaryColor].filter(Boolean),
+              typography: { heading: headingFont, body: bodyFont },
+              sections_detected: [],
+              human_readable_prompt: 'Screenshot analysis failed or was unavailable.'
+            };
 
-            // Cache the result
-            setAnalysisToCache(analysisHash, { ...analysis, screenshotBase64: oBase64 });
+            if (oBase64) {
+              try {
+                analysis = await analyzeUI_Image(client, oBase64, userContext, platformType);
+              } catch (analysisErr) {
+                console.error(`[URL Processor ✗] AI screenshot visual analysis failed for ${ref.url}:`, analysisErr.message);
+              }
+            }
+
+            // Combine both results and store in the cache
+            setAnalysisToCache(analysisHash, { 
+              ...analysis, 
+              screenshotBase64: oBase64,
+              extractedText: result.extractedText
+            });
 
             // Attach analysis results to reference
             ref.style = analysis.style;
             ref.layout = analysis.layout;
             ref.human_readable_prompt = analysis.human_readable_prompt;
+            ref.extractedText = result.extractedText;
 
-            allAnalyses.push({ ...analysis, ...ref });
-            if (!optimizedBase64) optimizedBase64 = oBase64;
-
+            allAnalyses.push({ 
+              ...analysis, 
+              ...ref, 
+              screenshotUrl: oBase64 ? `data:image/jpeg;base64,${oBase64}` : null 
+            });
+            
+            if (oBase64 && !optimizedBase64) {
+              optimizedBase64 = oBase64;
+            }
 
           } catch (err) {
             console.error(`[Unified Flow ✗] Failed processing ${ref.url}:`, err);
@@ -822,7 +907,9 @@ Please extract design intelligence ONLY relevant to this description.`.trim();
       if (clientResourcesSections && clientResourcesSections.length > 0) {
         console.log(`[Unified Flow] Processing ${clientResourcesSections.length} custom sections`);
         for (const sec of clientResourcesSections) {
-          if (sec.imageBase64) {
+          const imageBase64 = sec.imageBuffer ? sec.imageBuffer.toString('base64') : sec.imageBase64;
+
+          if (imageBase64) {
             try {
               const userContext = `
 Business Name: ${businessName || 'A Modern Business'}
@@ -832,14 +919,17 @@ ATTENTION CLAUDE: This image is specifically for the "${sec.type}" section.
 User Description: "${sec.description || 'N/A'}"
 Please extract design intelligence ONLY relevant to this section and description.`.trim();
 
-              const analysis = await analyzeUI_Image(client, sec.imageBase64, userContext, platformType);
+              const analysis = await analyzeUI_Image(client, imageBase64, userContext, platformType);
               // Attach analysis results to section
               sec.style = analysis.style;
               sec.layout = analysis.layout;
               sec.human_readable_prompt = analysis.human_readable_prompt;
-              
+
               allAnalyses.push({ ...analysis, sectionType: sec.type, description: sec.description, source: 'Custom Section Image' });
-              if (!optimizedBase64) optimizedBase64 = sec.imageBase64;
+              if (!optimizedBase64) optimizedBase64 = imageBase64;
+
+              // Clean up buffer after use to keep memory usage low
+              delete sec.imageBuffer;
             } catch (err) {
               console.error(`[Unified Flow ✗] Failed processing section image for ${sec.type}:`, err);
             }
@@ -948,6 +1038,7 @@ Theme Mode: ${themeMode || 'Dark'}
       manifestId: saved.id,
       referenceUrl,
       screenshotUrl: finalScreenshotUrl,
+      screenshotUrls: aiAnalysis.multipleAnalyses ? aiAnalysis.multipleAnalyses.map(a => a.screenshotUrl).filter(Boolean) : (finalScreenshotUrl ? [finalScreenshotUrl] : []),
       prompt: refinedPrompt,
       structuredPrompt
     };

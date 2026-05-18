@@ -15,9 +15,9 @@ export async function summarizeContent(client, content, platformType = 'anthropi
   }
 
   console.log('[OptimizationService] Summarizing large content source...');
-  
+
   const systemPrompt = "You are an expert content analyzer. Create a comprehensive, technical design brief from the following text. Capture all key entities, value propositions, features, and specific data points in detail. Focus on providing every technical detail needed to build a UI around this content.";
-  
+
   let summary = '';
   if (platformType === 'openai') {
     const completion = await client.chat.completions.create({
@@ -66,7 +66,8 @@ export function optimizePayload(data) {
       style: ref.style,
       layout: ref.layout,
       description: ref.description,
-      human_readable_prompt: ref.human_readable_prompt
+      human_readable_prompt: ref.human_readable_prompt,
+      extractedText: ref.extractedText
     })),
     // Add custom sections notes
     clientResourcesSections: (Array.isArray(data.clientResourcesSections) ? data.clientResourcesSections : []).map(sec => ({
